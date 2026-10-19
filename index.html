@@ -1,0 +1,146 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VELTRON — Space Defender</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#050816;color:#eaf7ff;font-family:Arial,sans-serif;text-align:center;overflow:hidden}
+canvas{display:block;width:100%;height:100dvh;position:fixed;inset:0;touch-action:none}
+#ui{position:fixed;inset:0;pointer-events:none}
+header{padding:14px;display:flex;justify-content:space-between;align-items:center;text-shadow:0 0 12px #00d9ff}
+.logo{font-weight:900;font-size:24px;letter-spacing:5px;color:#62efff}
+.hud{display:flex;justify-content:center;gap:18px;font-size:13px;flex-wrap:wrap}
+#health{color:#ff587a}
+.panel{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(90%,400px);padding:25px 20px;background:#081328eF;border:1px solid #00cfff;border-radius:18px;box-shadow:0 0 35px #007bff40;pointer-events:auto}
+h1{font-size:34px;letter-spacing:5px;color:#6cf3ff;margin:8px 0}
+p{color:#b9cbe3;line-height:1.6;font-size:14px}
+button{border:1px solid #31e7ff;background:linear-gradient(110deg,#0865a8,#6027ad);color:white;border-radius:10px;padding:13px 20px;font-size:14px;font-weight:bold;margin:6px;cursor:pointer}
+button:active{transform:scale(.96)}
+.hidden{display:none!important}
+#pauseBtn{pointer-events:auto;padding:8px 12px;margin:0}
+#controls{position:absolute;bottom:25px;width:100%;display:flex;justify-content:space-between;padding:0 24px;pointer-events:auto}
+.control{width:65px;height:60px;border-radius:15px;background:#12305299;border:1px solid #42dfff;color:white;font-size:24px;touch-action:none}
+#fire{width:85px;border-color:#ff579c;background:#771b59aa;font-size:13px}
+footer{font-size:11px;color:#7e91b2;margin-top:20px}
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<div id="ui">
+<header>
+<div class="logo">VELTRON</div>
+<button id="pauseBtn" onclick="pauseGame()">Ⅱ</button>
+</header>
+<div class="hud">
+<span>SCORE: <b id="score">0</b></span>
+<span>WAVE: <b id="wave">1</b></span>
+<span id="health">HULL: <b id="hp">100</b>%</span>
+<span>BEST: <b id="best">0</b></span>
+</div>
+<div class="panel" id="menu">
+<h1>GALACTIC WAR</h1>
+<p>Defend the galaxy. Destroy enemy ships. Survive the waves.</p>
+<button onclick="startGame()">START MISSION</button>
+<button onclick="showHelp()">HOW TO PLAY</button>
+<p>Move: Touch / Arrow Keys / A-D<br>Fire: Tap FIRE / Spacebar</p>
+<footer>PRODUCT OF VELTRON MEDIA</footer>
+</div>
+<div class="panel hidden" id="pausePanel">
+<h1>PAUSED</h1>
+<p>Your mission is on hold.</p>
+<button onclick="resumeGame()">RESUME</button>
+<button onclick="backMenu()">MAIN MENU</button>
+</div>
+<div class="panel hidden" id="over">
+<h1>MISSION FAILED</h1>
+<p>Final Score: <b id="finalScore">0</b></p>
+<button onclick="startGame()">TRY AGAIN</button>
+<button onclick="backMenu()">MAIN MENU</button>
+</div>
+<div class="panel hidden" id="help">
+<h1>HOW TO PLAY</h1>
+<p>Move your ship to dodge enemy fire.<br>Destroy enemies to earn points.<br>Survive each wave and watch for power-ups.</p>
+<button onclick="backMenu()">BACK</button>
+</div>
+<div id="controls" class="hidden">
+<button class="control" id="left">◀</button>
+<button class="control" id="fire">FIRE ✦</button>
+<button class="control" id="right">▶</button>
+</div>
+</div>
+<script>
+const canvas=document.getElementById('game'),ctx=canvas.getContext('2d');
+let W,H,stars=[],bullets=[],enemies=[],particles=[],items=[];
+let player,score=0,wave=1,running=false,paused=false,frame=0,spawn=0;
+let keys={},touch={left:false,right:false,fire:false};
+let best=Number(localStorage.getItem('veltronBest')||0);
+document.getElementById('best').textContent=best;
+function resize(){W=canvas.width=innerWidth*devicePixelRatio;H=canvas.height=innerHeight*devicePixelRatio;ctx.setTransform(1,0,0,1,0,0);ctx.scale(devicePixelRatio,devicePixelRatio);W=innerWidth;H=innerHeight;stars=Array.from({length:100},()=>({x:Math.random()*W,y:Math.random()*H,z:Math.random()*2+0.5}))}
+onresize=resize;resize();
+function ship(x,y){return {x,y,r:14,hp:100,cool:0}}
+function startGame(){
+score=0;wave=1;frame=0;spawn=0;bullets=[];enemies=[];particles=[];items=[];
+player=ship(W/2,H-105);running=true;paused=false;
+['menu','pausePanel','over','help'].forEach(id=>document.getElementById(id).classList.add('hidden'));
+document.getElementById('controls').classList.remove('hidden');updateHud();requestAnimationFrame(loop)
+}
+function backMenu(){running=false;paused=false;['pausePanel','over','help'].forEach(id=>document.getElementById(id).classList.add('hidden'));document.getElementById('menu').classList.remove('hidden');document.getElementById('controls').classList.add('hidden')}
+function showHelp(){document.getElementById('menu').classList.add('hidden');document.getElementById('help').classList.remove('hidden')}
+function pauseGame(){if(!running)return;paused=!paused;document.getElementById('pausePanel').classList.toggle('hidden',!paused);if(!paused)requestAnimationFrame(loop)}
+function resumeGame(){paused=false;document.getElementById('pausePanel').classList.add('hidden');requestAnimationFrame(loop)}
+function updateHud(){document.getElementById('score').textContent=score;document.getElementById('wave').textContent=wave;document.getElementById('hp').textContent=Math.max(0,player?.hp||0)}
+function burst(x,y,color,n=12){for(let i=0;i<n;i++){let a=Math.random()*Math.PI*2,s=Math.random()*4+1;particles.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:30,color})}}
+function shoot(){if(player.cool>0)return;bullets.push({x:player.x,y:player.y-17,vx:0,vy:-9,enemy:false});player.cool=10}
+function enemyShot(e){bullets.push({x:e.x,y:e.y+10,vx:(player.x-e.x)*.012,vy:4+wave*.12,enemy:true})}
+function spawnEnemy(){let boss=wave%5===0&&spawn===0;enemies.push({x:Math.random()*(W-45)+22,y:-25,hp:boss?12:1,max:boss?12:1,r:boss?26:15,boss,vx:(Math.random()-.5)*1.5,vy:boss?1:1.5+wave*.12,fire:Math.random()*100})}
+function loop(){
+if(!running||paused)return;
+ctx.clearRect(0,0,W,H);
+let bg=ctx.createLinearGradient(0,0,0,H);bg.addColorStop(0,'#050816');bg.addColorStop(1,'#10113b');ctx.fillStyle=bg;ctx.fillRect(0,0,W,H);
+stars.forEach(s=>{s.y+=s.z;if(s.y>H)s.y=0;ctx.fillStyle=`rgba(120,220,255,${s.z/3})`;ctx.fillRect(s.x,s.y,s.z,s.z)});
+if(!player){requestAnimationFrame(loop);return}
+frame++;if(frame%1000===0)wave++;
+if(keys.ArrowLeft||keys.a||touch.left)player.x-=5;
+if(keys.ArrowRight||keys.d||touch.right)player.x+=5;
+player.x=Math.max(18,Math.min(W-18,player.x));
+if((keys[' ']||touch.fire)&&frame%7===0)shoot();
+if(player.cool>0)player.cool--;
+if(spawn--<=0){spawnEnemy();spawn=Math.max(24,70-wave*3)}
+// Player ship
+ctx.save();ctx.translate(player.x,player.y);
+ctx.shadowBlur=20;ctx.shadowColor='#00eaff';
+ctx.fillStyle='#7df8ff';ctx.beginPath();ctx.moveTo(0,-20);ctx.lineTo(15,13);ctx.lineTo(0,7);ctx.lineTo(-15,13);ctx.closePath();ctx.fill();
+ctx.fillStyle='#8c5cff';ctx.beginPath();ctx.moveTo(-6,13);ctx.lineTo(0,25+Math.random()*7);ctx.lineTo(6,13);ctx.fill();ctx.restore();
+// Bullets
+bullets.forEach((b,i)=>{b.x+=b.vx;b.y+=b.vy;ctx.fillStyle=b.enemy?'#ff4d7d':'#7bffff';ctx.shadowBlur=10;ctx.shadowColor=ctx.fillStyle;ctx.fillRect(b.x-2,b.y-7,4,12);ctx.shadowBlur=0});
+bullets=bullets.filter(b=>b.y>-20&&b.y<H+20);
+// Enemies
+enemies.forEach(e=>{
+e.x+=e.vx;e.y+=e.vy;if(e.x<e.r||e.x>W-e.r)e.vx*=-1;
+e.fire--;if(e.fire<0){enemyShot(e);e.fire=e.boss?35:100+Math.random()*70}
+ctx.save();ctx.translate(e.x,e.y);ctx.shadowBlur=14;ctx.shadowColor=e.boss?'#ff2f8b':'#a45cff';ctx.fillStyle=e.boss?'#ff357e':'#9b65ff';
+ctx.beginPath();ctx.moveTo(0,e.r);ctx.lineTo(e.r,e.r*.1);ctx.lineTo(e.r*.65,-e.r*.7);ctx.lineTo(0,-e.r*.25);ctx.lineTo(-e.r*.65,-e.r*.7);ctx.lineTo(-e.r,e.r*.1);ctx.closePath();ctx.fill();ctx.restore();
+});
+for(let i=bullets.length-1;i>=0;i--){let b=bullets[i];if(b.enemy){if(Math.hypot(b.x-player.x,b.y-player.y)<player.r+5){player.hp-=8;burst(player.x,player.y,'#ff557a',5);bullets.splice(i,1);if(player.hp<=0)gameOver()}continue}
+for(let j=enemies.length-1;j>=0;j--){let e=enemies[j];if(Math.hypot(b.x-e.x,b.y-e.y)<e.r+4){e.hp--;bullets.splice(i,1);if(e.hp<=0){score+=e.boss?150:10;burst(e.x,e.y,e.boss?'#ff357e':'#a45cff',e.boss?35:12);if(Math.random()<.12)items.push({x:e.x,y:e.y,vy:2});enemies.splice(j,1)}break}}
+}
+enemies=enemies.filter(e=>{if(e.y>H+30){if(!e.boss)player.hp-=5;return false}return true});
+items.forEach(it=>{it.y+=it.vy;ctx.fillStyle='#61ffbb';ctx.beginPath();ctx.arc(it.x,it.y,8,0,7);ctx.fill();if(Math.hypot(it.x-player.x,it.y-player.y)<25){player.hp=Math.min(100,player.hp+15);it.got=true}});
+items=items.filter(i=>!i.got&&i.y<H);
+particles.forEach(p=>{p.x+=p.vx;p.y+=p.vy;p.life--;ctx.globalAlpha=Math.max(0,p.life/30);ctx.fillStyle=p.color;ctx.fillRect(p.x,p.y,3,3)});ctx.globalAlpha=1;particles=particles.filter(p=>p.life>0);
+if(player.hp<=0){gameOver();return}
+if(frame%10===0)updateHud();
+requestAnimationFrame(loop)
+}
+function gameOver(){running=false;document.getElementById('controls').classList.add('hidden');document.getElementById('finalScore').textContent=score;document.getElementById('over').classList.remove('hidden');if(score>best){best=score;localStorage.setItem('veltronBest',best);document.getElementById('best').textContent=best}}
+document.addEventListener('keydown',e=>{keys[e.key]=true;if(e.key==='Escape'||e.key==='p')pauseGame()});
+document.addEventListener('keyup',e=>keys[e.key]=false);
+function bind(id,field){let el=document.getElementById(id);el.addEventListener('pointerdown',e=>{e.preventDefault();touch[field]=true;el.setPointerCapture(e.pointerId)});['pointerup','pointercancel','lostpointercapture'].forEach(ev=>el.addEventListener(ev,()=>touch[field]=false))}
+bind('left','left');bind('right','right');bind('fire','fire');
+canvas.addEventListener('pointermove',e=>{if(running&&!paused&&e.buttons===1)player.x=e.clientX});
+</script>
+</body>
+</html>
